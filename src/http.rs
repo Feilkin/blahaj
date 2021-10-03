@@ -61,6 +61,7 @@ pub struct Response<'buffer> {
     status_code: u16,
     reason: &'buffer [u8],
     body: &'buffer [u8],
+    // TODO: headers
 }
 
 impl<'buffer> Response<'buffer> {
