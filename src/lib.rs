@@ -2,6 +2,10 @@
 //#![cfg_attr(not(test), no_std)]
 #![feature(asm)]
 
+use ip::AddressV4;
+
+mod ip;
+
 #[repr(u64)]
 enum Syscalls {
     Read = 0,
@@ -21,41 +25,6 @@ fn syscall_ret(rax: i64) -> Result<u64, u64> {
     }
 }
 
-/// Socket Address
-#[derive(Debug)]
-#[repr(C)]
-struct Address {
-    sa_family: u16,
-    sa_data: [u8; 14],
-}
-
-impl Address {
-    pub fn parse(_address: &str) -> Result<Address, ()> {
-        let mut data = [0; 14];
-        data[0..6].copy_from_slice(&[
-            (12403u16 >> 8 & 0xFF) as u8,
-            (12403u16 & 0xFF) as u8,
-            127,
-            0,
-            0,
-            1,
-        ]);
-
-        // TODO: IPv4 parser
-        Ok(Address {
-            sa_family: 2,  // AF_INET
-            sa_data: data, // 127.0.0.1:0, hopefully
-        })
-    }
-
-    pub fn empty() -> Address {
-        Address {
-            sa_family: 0,
-            sa_data: [0; 14],
-        }
-    }
-}
-
 struct Socket {
     fd: u64,
 }
@@ -67,7 +36,7 @@ impl Drop for Socket {
 }
 
 impl Socket {
-    pub fn bind_and_listen(address: &Address) -> Result<Socket, ()> {
+    pub fn bind_and_listen(address: &AddressV4) -> Result<Socket, ()> {
         let socket = unsafe { Socket::sys_socket() }.unwrap();
         unsafe { socket.sys_bind(address) }.unwrap();
         unsafe { socket.sys_listen(64) }.unwrap();
@@ -76,7 +45,7 @@ impl Socket {
     }
 
     pub fn accept(&self) -> Result<Stream, ()> {
-        let mut peer = Box::new(Address::empty());
+        let mut peer = Box::new(AddressV4::empty());
         let stream = unsafe { self.sys_accept(&mut peer) }.unwrap();
 
         dbg!(peer);
@@ -94,7 +63,7 @@ impl Socket {
 
         asm!(
             "syscall",
-            in("rdi")family,
+            in("rdi") family,
             in("rsi") kind,
             in("rdx") protocol,
             inlateout("rax") rax,
@@ -103,10 +72,10 @@ impl Socket {
         syscall_ret(rax).map(|fd| Socket { fd })
     }
 
-    unsafe fn sys_bind(&self, address: &Address) -> Result<(), u64> {
+    unsafe fn sys_bind(&self, address: &AddressV4) -> Result<(), u64> {
         let mut rax = Syscalls::Bind as i64;
         let fd = self.fd;
-        let address_ptr = address as *const Address;
+        let address_ptr = address as *const AddressV4;
         let address_len = 16_u64;
 
         asm!(
@@ -152,11 +121,11 @@ impl Socket {
         }
     }
 
-    unsafe fn sys_accept(&self, peer_address: &mut Address) -> Result<Stream, u64> {
+    unsafe fn sys_accept(&self, peer_address: &mut AddressV4) -> Result<Stream, u64> {
         let mut rax = Syscalls::Accept as i64;
         let fd = self.fd;
         let address_ptr = peer_address;
-        let mut address_length: u64 = core::mem::size_of::<Address>() as u64;
+        let mut address_length: u64 = core::mem::size_of::<AddressV4>() as u64;
         let address_length_ptr = &mut address_length as *mut u64;
 
         asm!(
@@ -204,19 +173,21 @@ impl Stream {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Address, Socket};
     use std::io::Write;
     use std::net::Shutdown;
 
+    use crate::ip::AddressV4;
+    use crate::Socket;
+
     #[test]
     fn open_socket() {
-        let address = Address::parse("127.0.0.1:0").unwrap();
+        let address = AddressV4::parse("127.0.0.1:0").unwrap();
         Socket::bind_and_listen(&address).unwrap();
     }
 
     #[test]
     fn accept_stream() {
-        let address = Address::parse("127.0.0.1:12403").unwrap();
+        let address = AddressV4::parse("127.0.0.1:12403").unwrap();
         let socket = Socket::bind_and_listen(&address).unwrap();
         let mut client = std::net::TcpStream::connect("127.0.0.1:12403").unwrap();
         client.set_nonblocking(true).unwrap();
