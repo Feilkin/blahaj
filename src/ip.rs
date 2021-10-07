@@ -104,7 +104,7 @@ mod parser {
 
         #[test]
         fn parse_address_and_port() {
-            assert_eq!(address_and_port("127.0.0.1:8080"), Ok((0x0100007F, 8080)));
+            assert_eq!(address_and_port("127.0.0.1:8080"), Ok((0x0100007F, 36895)));
         }
     }
 }
